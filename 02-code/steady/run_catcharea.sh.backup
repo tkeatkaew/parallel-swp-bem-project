@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Build and run catcharea with a timestamped preflight system summary.
+# Usage: ./run_catcharea.sh [NUM_THREADS] [ARG1 ARG2 ARG3]
+set -u
+
+# ---- config / args ----
+NUM_THREADS="${1:-8}"
+ARG1="${2:-1.0}"
+ARG2="${3:-100.0}"
+ARG3="${4:-0.001}"
+CMD="./catcharea $ARG1 $ARG2 $ARG3"
+
+# ---- helpers ----
+ts() { printf '[%(%Y-%m-%d %H:%M:%S)T] %s\n' -1 "$*"; }
+ts_block() {  # prefix every line of stdin with a timestamp
+  while IFS= read -r line; do ts "$line"; done
+}
+
+val_or_na() {
+  if [ -n "${1:-}" ]; then echo "$1"; else echo "N/A"; fi
+}
+
+# ---- gather system info (robust fallbacks) ----
+OS_KERNEL="$(uname -sr)"
+if command -v lsb_release >/dev/null 2>&1; then
+  OS_NAME="$(lsb_release -ds 2>/dev/null | sed 's/^"//;s/"$//')"
+elif [ -r /etc/os-release ]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  OS_NAME="${PRETTY_NAME:-Linux}"
+else
+  OS_NAME="Linux"
+fi
+
+CPU_MODEL="$(lscpu 2>/dev/null | awk -F: '/Model name/ {sub(/^[ \t]+/, "", $2); print $2; exit}')"
+if [ -z "$CPU_MODEL" ] && [ -r /proc/cpuinfo ]; then
+  CPU_MODEL="$(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo | sed 's/^ //')"
+fi
+CPU_MODEL="$(val_or_na "$CPU_MODEL")"
+
+# physical cores (unique Core,Socket pairs)
+if command -v lscpu >/dev/null 2>&1; then
+  PHYS_CORES="$(lscpu -p=Core,Socket 2>/dev/null | awk -F, '!/^#/ {k=$1","$2; c[k]=1} END {print length(c)}')"
+else
+  PHYS_CORES=""
+fi
+PHYS_CORES="$(val_or_na "$PHYS_CORES")"
+
+# memory total (human readable)
+if command -v free >/dev/null 2>&1; then
+  MEM_TOTAL="$(free -h | awk '/^Mem:/ {print $2}')"
+elif [ -r /proc/meminfo ]; then
+  # convert kB to Gi
+  kb=$(awk '/MemTotal:/ {print $2}' /proc/meminfo)
+  if [ -n "$kb" ]; then
+    awk -v kb="$kb" 'BEGIN { printf "%.1fGi", kb/1048576 }'
+    echo
+  else
+    MEM_TOTAL=""
+  fi
+else
+  MEM_TOTAL=""
+fi
+MEM_TOTAL="$(val_or_na "$MEM_TOTAL")"
+
+# cache sizes via lscpu (L1d/L1i/L2/L3)
+CACHE_INFO="$(lscpu 2>/dev/null | awk -F: '
+/^(L1d cache|L1i cache|L2 cache|L3 cache)/ {
+  gsub(/^[ \t]+/, "", $2);
+  printf "%-35s %s\n", $1":", $2
+}')"
+
+# vulnerabilities lines
+VULN_INFO="$(lscpu 2>/dev/null | awk -F: '/^Vulnerability/ {gsub(/^[ \t]+/, "", $2); printf "%-35s %s\n", $1":", $2}')"
+
+# ---- print system/environment summary ----
+ts "System Information:"
+ts "  OS: $OS_NAME ($OS_KERNEL)"
+ts "  CPU: $CPU_MODEL"
+ts "  Physical cores: $PHYS_CORES"
+ts "  Memory: $MEM_TOTAL"
+if [ -n "$CACHE_INFO" ]; then echo "$CACHE_INFO" | ts_block; fi
+if [ -n "$VULN_INFO" ]; then echo "$VULN_INFO" | ts_block; fi
+
+ts "Environment file: /etc/environment"
+if [ -r /etc/environment ]; then
+  sed 's/^/  /' /etc/environment | ts_block
+else
+  ts "  (not readable by current user)"
+fi
+
+# ---- OpenMP / OpenBLAS env ----
+export OMP_NUM_THREADS="$NUM_THREADS"
+export OMP_PROC_BIND=spread
+export OMP_PLACES=cores
+export OMP_DISPLAY_ENV=VERBOSE
+export OPENBLAS_NUM_THREADS="$NUM_THREADS"
+
+ts "OpenMP / OpenBLAS configuration:"
+ts "  OMP_NUM_THREADS=$OMP_NUM_THREADS"
+ts "  OMP_PROC_BIND=$OMP_PROC_BIND"
+ts "  OMP_PLACES=$OMP_PLACES"
+ts "  OPENBLAS_NUM_THREADS=$OPENBLAS_NUM_THREADS"
+
+# ---- pause before build ----
+read -r -n1 -s -p "$(ts 'Press any key to start build (make all)…')" _; echo
+
+# ---- build ----
+ts "Running: make all"
+if ! make all 2>&1 | ts_block; then
+  ts "Error: build failed!"
+  exit 1
+fi
+
+# ---- run program ----
+echo
+ts "=== Running catcharea program ==="
+ts "Executing: $CMD"
+ts "Start time: $(date)"
+if ! { time $CMD; } 2>&1 | ts_block; then
+  ts "Error: catcharea execution failed!"
+  exit 1
+fi
+ts "End time: $(date)"
+ts "=== Completed successfully ==="

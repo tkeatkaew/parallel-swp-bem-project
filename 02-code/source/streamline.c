@@ -1,0 +1,1430 @@
+/*--------------------------------------------------------*/
+/*------------this final streamline -----------------------*/
+/*--------------------------------------------------------*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+/*--------------------------------------------------------*/
+#include "boundary_types.h"
+#include "co_matrix_types.h"
+#include "matrix_types.h"
+#include "ten_matrix_types.h"
+#include "memory_types.h"
+
+#include "catchment.h"
+#include "file.h"
+#include "path.h"
+#include "vcalc.h"
+
+#include "streamline.h"
+/*--------------------------------------------------------*/
+
+/*-----------------subfunction one---------------------*/
+/*----------------QUADRATIC EQUATION-------------------*/
+/*-----------------------------------------------------*/
+int quadratic(a,z)
+     double a[3];    /* 3 real coefficients */
+     double z[2][2]; /* 2 complex roots */
+{
+  int n;            /* number of real roots */
+  double b1,D; {double a0,a1;
+    
+  a0=a[0]/a[2];
+  a1=a[1]/a[2];
+
+  b1=a1/2.0;
+  D=b1*b1-a0;}
+  if(D==0.0)
+    { double x;
+    x=-b1;
+    z[0][0]=x;                    z[0][1]=0.0;
+    z[1][0]=x;                    z[1][1]=0.0;
+    n=2;
+    }
+  else
+    {
+      if(D>0.0)
+	{ double x;
+	D=sqrt(D);
+	x=-b1;
+	z[0][0]=x+D;              z[0][1]=0.0;
+	z[1][0]=x-D;              z[1][1]=0.0;
+	n=2;
+	}
+      else
+	{ double x;
+	D=sqrt(-D);
+	x=-b1;
+	z[0][0]=x;               z[0][1]=+D;
+	z[1][0]=x;               z[1][1]=-D;
+	n=0;
+	}
+    }
+  return(n);
+}
+/*-----------------subfunction two---------------------*/
+/*-----------------------------------------------------*/
+/*-------------------CUBIC EQUATION--------------------*/
+/*-----------------------------------------------------*/
+int cubic(a,z)
+     double a[4];    /* 4 real coefficients */
+     double z[3][2]; /* 3 complex roots */
+{
+  int n;            /* number of real roots */
+  double b2,R,D; {double a0,a1,a2,Q;
+    
+  a0=a[0]/a[3];
+  a1=a[1]/a[3];
+  a2=a[2]/a[3];
+  b2=a2/3.0;
+  Q=a1/3.0-b2*b2;
+  R=(a1/2.0-b2*b2)*b2-a0/2.0;
+  D=Q*Q*Q+R*R;}
+  if(D==0.0)
+    { double SpT,x;
+    SpT=cbrt(R)*2.0;
+    x=-(SpT/2.0+b2);
+    z[0][0]=SpT-b2;               z[0][1]=0.0;
+    z[1][0]=x;                    z[1][1]=0.0;
+    z[2][0]=x;                    z[2][1]=0.0;
+    n=3;
+    }
+  else
+    {
+      if(D>0.0)
+	{ double SpT,SmT; {double S,T;
+	D=sqrt(D);
+	S=cbrt(R+D);
+	T=cbrt(R-D);
+	SpT=S+T;
+	SmT=S-T;}{ double x,y;
+	x=-(SpT/2.0+b2);
+	y=SmT/2.0*sqrt(3.0);
+	z[0][0]=SpT-b2;           z[0][1]=0.0;
+	z[1][0]=x;                z[1][1]=y;
+	z[2][0]=x;                z[2][1]=-y;}
+	n=1;
+	}
+      else
+	{ double SpT,SmT; {double L,phi;
+	L=cbrt(sqrt(R*R-D))*2.0;
+	phi=atan2(sqrt(-D),R)/3.0;
+	SpT=L*cos(phi);
+	SmT=L*sin(phi);}{ double x,y;
+	x=-(SpT/2.0+b2);
+	y=SmT/2.0*sqrt(3.0);
+	z[0][0]=SpT-b2;           z[0][1]=0.0;
+	z[1][0]=x-y;              z[1][1]=0.0;
+	z[2][0]=x+y;              z[2][1]=0.0;}
+	n=3;
+	}
+    }
+  return(n);
+}
+/*-----------------subfunction three-------------------*/
+/*-----------------------------------------------------*/
+/*----------------QUARTIC EQUATION---------------------*/
+/*-----------------------------------------------------*/
+int quartic(a,z)
+     double a[5];    /* 5 real coefficients */
+     double z[4][2]; /* 4 complex roots */
+{
+  int n;            /* number of real roots */
+  int k;
+  double a0,a1,a2,a3;
+  double b[4];
+  double y[3][2];
+
+
+  a0=a[0]/a[4];
+  a1=a[1]/a[4];
+  a2=a[2]/a[4];
+  a3=a[3]/a[4];
+
+  b[0]=(4.0*a2-a3*a3)*a0-a1*a1;
+  b[1]=a3*a1-4.0*a0;
+  b[2]=-a2;
+  b[3]=1.0;
+
+  k=cubic(b,y);
+  /* printf("cubic has %d real roots\n",k); */
+
+  {double y1,d0,d1; {int i; double yi,di0,di1,di,dmin;
+
+  y1=y[0][0];   d0=y1*y1/4.0-a0;   d1=a3*a3/4.0-(a2-y1);   dmin=(d0<d1?d0:d1);
+  /* printf("%e ",dmin); */
+  i=1;
+  while(i<k)
+    {
+      yi=y[i][0];   di0=yi*yi/4.0-a0;   di1=a3*a3/4.0-(a2-yi);   di=(di0<di1?di0:di1);
+      /* printf("%e ",di); */
+      if(dmin<di)
+	{
+	  y1=yi;
+	  d0=di0;
+	  d1=di1;
+	  dmin=di;
+	}
+      i=i+1;
+    }
+  /* printf("use root %f, min %f\n",y1,dmin); */
+  if( sqrt(dmin*dmin) < 1.0e-7)
+    {
+      dmin=0.0;
+    }
+  else
+    {
+      if( dmin < -1.0e-7 )
+	{
+	  printf("\n%e or %e probably small negative instead of zero\n",d0,d1);
+	  exit(0);
+	}
+    }}
+  if( sqrt(d0*d0) < 1.0e-7)    {      d0=0.0;    }
+  if( sqrt(d1*d1) < 1.0e-7)    {      d1=0.0;    }
+  d0=sqrt(d0);
+  d1=sqrt(d1);
+  {double s;
+
+  if(a3*y1-2.0*a2<0.0) { s=-1.0; }
+  else                 { s= 1.0; }  
+  /*
+  printf("'s' (new method) %f",s);
+  */
+  b[0]=y1/2.0+s*d0;
+  b[1]=a3/2.0+d1;
+  b[2]=1.0;
+  k=quadratic(b,y);
+  /* printf("quadratic has %d real roots\n",k); */
+
+  {int i;
+  i=2-k;
+  z[i][0]=y[0][0];                z[i][1]=y[0][1];
+  z[i+1][0]=y[1][0];              z[i+1][1]=y[1][1];}
+
+  b[0]=y1/2.0-s*d0;
+  b[1]=a3/2.0-d1;
+  b[2]=1.0;
+  n=k+quadratic(b,&z[k]);}}
+  /* printf("quadratic has %d real roots\n",n-k); */
+
+  return(n);
+}
+
+/*-----------------------------------------------------*/
+/*-----------------subfunction six---------------------*/
+int check_gv(n,v,gv)
+     int n;
+     double v[4],gv[4];
+{
+  int ngv,i;
+  double  vsq;
+
+  ngv=0;  /* number of v is good value */
+  for(i=0;i<n;i++)
+    {
+      vsq=v[i]*v[i];
+
+      /*      if(vsq > 0.490)   */
+      if(vsq < 1.0+1.0e-8) 
+	{
+	  if(v[i]>1.0)   v[i]=1.0;
+	  else if(v[i]<-1.0)  v[i]=-1.0;
+	  gv[ngv]=v[i];
+	  ngv=ngv+1;
+	}
+    }
+  return(ngv);
+}
+/*-----------------subfunction seven--------------------*/
+/*-----------------------------------------------------*/
+/*-------CHOOSE THE ANGLE FOR MINIMUM OR MAXIMUN-------*/
+/*-----------------------------------------------------*/
+double choose_max_or_min(direction, first, second, angle, n, r)
+     double first[2], second[2], angle[4];
+     double r;
+     int n, direction;
+{
+  double a1, b1, a2, b2;
+  double t, Hmax, Hmin, h;
+  int i, imin, imax, j;
+
+  a1=first[0];       b1=first[1];
+  a2=second[0];      b2=second[1];
+
+#if 0
+  printf(" a1=%f\tb1=%f\t",a1,b1);
+  printf(" a2=%f\tb2=%f ",a2,b2);
+  printf("\n");
+#endif
+
+  /*----- initial angle ------*/
+  imin=0;
+  imax=0;
+  t=angle[0];
+  Hmax = r*(a1*cos(t)+b1*sin(t)) + r*r*(a2*cos(2*t)+b2*sin(2*t));
+  Hmin = Hmax;
+  /*----- loop for the next angle ------*/
+  for(i=1;i<n;i++) 
+    {
+      t=angle[i];
+      h = r*(a1*cos(t)+b1*sin(t)) + r*r*(a2*cos(2*t)+b2*sin(2*t));
+      if(h>Hmax) 
+	{
+	  Hmax = h;
+	  imax=i;
+	}
+      else if(h<Hmin)
+	{
+	  Hmin = h;
+	  imin=i;
+	} 
+    }
+#if 0
+  printf("\n Hmin=%f , ANGLEmin=%f ",Hmin,angle[imin]);
+  printf("\n Hmax=%f , ANGLEmax=%f ",Hmax,angle[imax]);
+#endif
+
+  if(direction!=0) /* direction is max */
+    j=imax;
+  else /* direction is max */
+    j=imin;
+  
+  return(angle[j]);
+}
+/*-----------------subfunction eight--------------------*/
+/*------------------------------------------------------*/
+/*------------------------------------------------------*/
+int myquartic(c,x)
+     double *c;
+     double *x;
+{
+  double z[4][2];
+  double a,imagpart,realpart;
+  int n,i;
+
+  a=1.0e-6;  /* tolerance in complex number */
+  n=quartic(c,z);
+  n=0;
+  for(i=0;i<4;i++)
+    {
+      realpart=fabs(z[i][0]);
+      imagpart=fabs(z[i][1]);
+      /* printf("(%.2e,%.2e) ",z[i][0],z[i][1]); */
+      if(imagpart<a)
+	{
+	  if(realpart<1.0+a)
+	    {
+	      if(realpart<=1.0)
+		{
+		  x[n]=z[i][0];
+		  n=n+1;
+		}
+	      else
+		{
+		  if(z[i][0]>0.0)
+		    {
+		      x[n]=1.0;
+		      n=n+1;
+		    }
+		  else
+		    {
+		      x[n]=(-1.0);
+		      n=n+1;
+		    }
+		}
+	    }
+	}
+    }
+  for(i=n;i<4;i++)
+    {
+      x[i]=0.0;
+    }
+
+  return(n);
+}
+/*-----------------subfunction nine---------------------*/
+/*------------------------------------------------------*/
+/*------------------------------------------------------*/
+int myquadratic(c,x)
+     double *c;
+     double *x;
+{
+  double z[2][2];
+  double a,imagpart,realpart;
+  int n,i;
+
+  a=1.0e-6;  /* tolerance in complex number */
+  n=quadratic(c,z);
+  n=0;
+  for(i=0;i<2;i++)
+    {
+      realpart=fabs(z[i][0]);
+      imagpart=fabs(z[i][1]);
+      /* printf("(%.2e,%.2e) ",z[i][0],z[i][1]); */
+      if(imagpart<a)
+	{
+	  if(realpart<1.0+a)
+	    {
+	      if(realpart<=1.0)
+		{
+		  x[n]=z[i][0];
+		  n=n+1;
+		}
+	      else
+		{
+		  if(z[i][0]>0.0)
+		    {
+		      x[n]=1.0;
+		      n=n+1;
+		    }
+		  else
+		    {
+		      x[n]=(-1.0);
+		      n=n+1;
+		    }
+		}
+	    }
+	}
+    }
+  for(i=n;i<2;i++)
+    {
+      x[i]=0.0;
+    }
+
+  return(n);
+}
+/*-----------------subfunction ten1----------------------*/
+/*------------------------------------------------------*/
+/*------------my follow streamline(old)-----------------*/
+/*------------------------------------------------------*/
+void edit1_my_follow_stream(direction,P, dV, d2V, dP, r)
+     coordinates P, dV, dP;
+     tensor d2V;
+     int direction;
+     double r;
+{
+  double first[2], second[2];
+  double a1,a2,b1,b2;
+  double rsq, c[5], s[5];
+  double alfa;
+  double angle[16];
+  double seta;
+  int i;  
+
+  /*-----------*/
+  int ngx,ngy,nt;
+  double gx[4], gy[4], cx, cy;
+  /*-----------*/
+
+
+  first[0]=dV[0]; /* a1 */
+  first[1]=dV[1]; /* b1 */
+  second[0]=0.5*d2V[0][0]; /* a2 */ 
+  second[1]=0.5*d2V[0][1]; /* b2 */
+
+  a1=first[0];       b1=first[1];
+  a2=second[0];      b2=second[1];
+#if 0
+  /*-----------test-------------------------*/
+  printf("\n P[0]=%f\tP[1]=%f ",P[0],P[1]);
+  printf("\n dV[0]=%f\tdV[1]=%f",dV[0],dV[1]);
+  printf("\t d2V[0][0]=%f\td2V[0][1]=%f",d2V[0][0],d2V[0][1]);
+  printf("\n");
+  /*-----------test-------------------------*/
+#endif
+  /*----------------------------------------*/
+  rsq=r*r;
+
+  c[4] = 16.0*rsq*(b2*b2+a2*a2);
+  c[3] = 8.0*r*(b1*b2+a1*a2);
+  c[2] = b1*b1 + a1*a1 - 16.0*rsq*(b2*b2+a2*a2);
+  c[1] = -4.0*r*(b1*b2+2.0*a1*a2);
+  c[0] = 4*b2*b2*rsq - a1*a1;
+
+  s[4] = c[4];
+  s[3] = 8.0*r*(a1*b2-b1*a2);
+  s[2] = c[2];
+  s[1] = -4.0*r*(a1*b2-2.0*b1*a2);
+  s[0] = 4*b2*b2*rsq - b1*b1;
+  /*----------------------------------------*/
+  alfa=1.0e-7;
+  if( c[4] > (alfa*c[2]) )
+    {
+      ngx = myquartic(c,gx);
+      ngy = myquartic(s,gy);
+      /*
+      nx = myquartic(c,x);
+      ny = myquartic(s,y);
+      ngx = check_gv(nx,x,gx);
+      ngy = check_gv(ny,y,gy);
+      */
+      for(i=0;i<ngx;i++)
+	{
+	  cy = sqrt(1.0-gx[i]*gx[i]);
+	  angle[2*i] = atan2(cy,gx[i]);
+	  angle[2*i+1] = atan2(-1.0*cy,gx[i]);
+	}
+      for(i=0;i<ngy;i++)
+	{
+	  cx = sqrt(1.0-gy[i]*gy[i]);
+	  angle[(2*ngx)+(2*i)] = atan2(gy[i],cx);
+	  angle[(2*ngx)+(2*i)+1] = atan2(gy[i],-1.0*cx);
+	}
+      
+      nt=ngx+ngy; if(nt==0) {printf("\n cannot get the streamline"); exit(0);} 
+      seta =  choose_max_or_min(direction,first, second, angle, 2*nt, r);
+      /*-----------test-------------------------*/
+      /*
+      printf("  seta_y= %f ",seta);
+      */
+      /*-----------test-------------------------*/
+
+      dP[0] = r*cos(seta);
+      dP[1] = r*sin(seta);
+    }
+  else
+    {
+      if( c[2] > 0.0 )
+	{
+	  ngx = myquadratic(c,gx);
+	  ngy = myquadratic(s,gy);
+	  /*
+	  nx = myquadratic(c,x);
+	  ny = myquadratic(s,y);
+	  ngx = check_gv(nx,x,gx);
+	  ngy = check_gv(ny,y,gy);
+	  */
+	  for(i=0;i<ngx;i++)
+	    {
+	      cy = sqrt(1.0-gx[i]*gx[i]);
+	      angle[2*i] = atan2(cy,gx[i]);
+	      angle[2*i+1] = atan2(-1.0*cy,gx[i]);
+	    }
+	  for(i=0;i<ngy;i++)
+	    {
+	      cx = sqrt(1.0-gy[i]*gy[i]);
+	      angle[(2*ngx)+(2*i)] = atan2(gy[i],cx);
+	      angle[(2*ngx)+(2*i)+1] = atan2(gy[i],-1.0*cx);
+	    }
+	  
+	  nt=ngx+ngy; if(nt==0) {printf("\n cannot get the streamline"); exit(0);} 
+	  seta =  choose_max_or_min(direction,first, second, angle, 2*nt, r);
+	  dP[0] = r*cos(seta);
+	  dP[1] = r*sin(seta);
+	}
+      else
+	{
+	  dP[0] = 0.0;
+	  dP[1] = 0.0;
+	}
+    }
+  /*-----------test-------------------------*/
+  //printf("  seta_y= %f",seta);
+}
+/*--------------------------------------------------------*/
+#define NBYTES 96
+/*--------------------------------------------------------*/
+void plot_streamlines(c,n_streams,streamlines,file)
+     catchment *c;
+     int n_streams;
+     path **streamlines;
+     unsigned char *file;
+{
+  unsigned char buffer[NBYTES];
+  FILE *output;
+  path *p;
+  int i,j,k,offset;
+  coordinates xy;
+
+  output=open_file(0,file,"w");
+
+  for(i=0;i<n_streams;i++)
+    {
+      p=streamlines[i];
+      k=p->points;
+      for(j=0;j<k;j++)
+	{
+	  get_path_xy(p,j,xy);
+	  offset=put_buffer(NBYTES,buffer,0,"%f",xy[0]);
+	  offset=put_buffer(NBYTES,buffer,offset," %f",xy[1]);
+	  put_next_line(output,buffer);
+	}
+      put_next_line(output,"\0");
+    }
+
+  fclose(output);
+}
+/*--------------------------------------------------------*/
+void plot_streamlines_v2(c,n_streams,streamlines,file)
+     catchment *c;
+     int n_streams;
+     path **streamlines;
+     unsigned char *file;
+{
+  unsigned char buffer[NBYTES];
+  FILE *output;
+  path *p;
+  int i,j,k,offset;
+  coordinates xy;
+
+  output=open_file(0,file,"w");
+
+  for(i=0;i<n_streams;i++)
+    {
+      p=streamlines[i];
+      k=p->points;
+      for(j=0;j<k;j++)
+	{
+	  get_path_xy(p,j,xy);
+	  offset=put_buffer(NBYTES,buffer,0,"%d\t",k);
+	  offset=put_buffer(NBYTES,buffer,offset,"%f\t",xy[0]);
+	  offset=put_buffer(NBYTES,buffer,offset,"%f",xy[1]);
+	  put_next_line(output,buffer);
+	}
+      put_next_line(output,"\0");
+    }
+
+  fclose(output);
+}
+/*----------------------------------------------------------*/
+void plot_1_streamline(c,streamline,output)
+     catchment *c;
+     path *streamline;
+     FILE *output;
+{
+  unsigned char buffer[NBYTES];
+  int j,k,offset;
+  coordinates xy;
+  
+  k=streamline->points;
+  for(j=0;j<k;j++)
+    {
+      get_path_xy(streamline,j,xy);
+      offset=put_buffer(NBYTES,buffer,0,"%f",xy[0]);
+      offset=put_buffer(NBYTES,buffer,offset," %f",xy[1]);
+      put_next_line(output,buffer);
+    }
+  put_next_line(output,"\0");
+}
+/*--------------------------------------------------------*/
+/*--------streamline loop by Dr.Andrew--------------------*/
+/*--------------------------------------------------------*/
+double streamline_loop(P,c,direction,max_steps,step_size,streamline,
+		    vectors,v1) 
+     coordinates P;
+     catchment *c;
+     int direction; /* 1 = go to max; 0 = go to min */
+     int max_steps; /* +ve = number of steps; -ve = don't check */
+     double step_size;
+     path *streamline;
+     bem_vectors *vectors;
+     bem_results *v1;
+{
+  bem_results vol;
+  coordinates dP;
+  int segment,j,new_z;
+  double pp,r,s,d,D,t_sum,GH0,L_sum,G_old,G_new;
+  path *this_path;
+
+  D=0.0005;/* the old= 0.001 */
+  if(step_size<10.0*D)
+    {
+      printf("step size %f is too small\n",step_size);
+      step_size=10.0*D;
+      printf("changing step size to value = %f\n",step_size);
+    }
+  r=step_size;
+  GH0=0.0;
+  L_sum=0.0;
+  t_sum=0.0;
+  j=0;
+  new_z=1;
+  /*---------------------------------*/
+  while(new_z>=0 && (max_steps<0 || j<max_steps) ) 
+    {
+      check_each_path(c,P,&d,&s,&segment,&this_path);
+      
+      if(d<D) /* on path */
+	{
+	  if(c->previous_zone<0)
+	    {
+	      printf("\n !warning : the start P is outside catchment\n ");	  
+	      printf("should to choose the new point P\n");
+	      exit(0);
+	    }
+	  r=r/2.0;
+	  P[0]=P[0]-dP[0];  	  P[1]=P[1]-dP[1];
+	  edit1_my_follow_stream(direction,P, vol.dV, vol.d2V, dP,r);
+	  P[0]=P[0]+dP[0];        P[1]=P[1]+dP[1];   
+	}
+      else /* not on path */
+	{
+          pp=calculate_inside_catchment(c,P,vectors,&vol,&new_z);
+	  if(j==0) /* return values at starting point */
+	    {
+	      v1->V=pp;
+	      v1->dV[0]=vol.dV[0];
+	      v1->dV[1]=vol.dV[1];
+	      v1->d2V[0][0]=vol.d2V[0][0];
+	      v1->d2V[0][1]=vol.d2V[0][1];
+	      v1->d2V[1][0]=vol.d2V[1][0];
+	      v1->d2V[1][1]=vol.d2V[1][1];
+	    }
+
+	  if(j%50==0) printf("\n");
+	  if(j%10==0) { printf("(%d)",j); fflush(stdout); }
+	  if(new_z==0) { printf("s"); fflush(stdout); }/* same zone */
+	  if(new_z==1) { printf("(%d)N",j); fflush(stdout); }/* new zone */ 
+	    
+	  if(new_z>=0) /* inside catchment; not on path */
+	    {
+	      if(new_z==1||j==0)  /* new zone or first time */
+		{
+		  L_sum=L_sum+t_sum*GH0;
+		  t_sum=0.0;
+		  GH0=sqrt(vol.dV[0]*vol.dV[0]+vol.dV[1]*vol.dV[1]);
+		  G_old=GH0;
+		}
+	      else /* old zone and not first time */
+		{
+		  G_new=sqrt(vol.dV[0]*vol.dV[0]+vol.dV[1]*vol.dV[1]);
+		  t_sum=t_sum+r/2.0*(G_new+G_old)/(G_new*G_old);
+		  G_old=G_new;
+		  r=step_size;
+		}
+	    }
+	  else /* outside catchement */
+	    { printf(" outside catchment\n"); }
+	  if(streamline!=(path *)NULL) { put_path_xy(streamline,j,P); }
+
+	  edit1_my_follow_stream(direction,P, vol.dV, vol.d2V, dP,r);
+	  P[0]=P[0]+dP[0];        P[1]=P[1]+dP[1];   
+	  j=j+1;
+	}//end of not path
+    } //end of while
+  L_sum=L_sum+t_sum*GH0;
+  printf(" L=%.4f",L_sum);
+
+  if(streamline!=(path *)NULL) streamline->points=j;
+  return(L_sum);
+}
+/*--------------------------------------------------------*/
+double SCA_loop_GH0_v2(P,c,direction,max_steps,step_size,streamline,
+		    vectors,v1) 
+     coordinates P;
+     catchment *c;
+     int direction; /* 1 = go to max; 0 = go to min */
+     int max_steps; /* +ve = number of steps; -ve = don't check */
+     double step_size;
+     path *streamline;
+     bem_vectors *vectors;
+     bem_results *v1;
+{
+  double r, D, d, pp, s, abs_dP;
+  double DL_j, SCA_j, SCA;
+  int newz_Lc, newz_Mc, newz_Ln, newz_Ln2;
+  int j, segment;
+
+  int Pc_zone, Pc2_zone, Pn_zone;
+  coordinates Pc, Pc2, Pn, dP;
+  bem_results vol_Pc,vol_Pn;
+  double G_Pc, G_Pn, GH0;
+  double dx,dy,dw,cosq_theta, s_theta_Pc;
+
+  path *this_path;
+  
+  r=step_size;
+  D=0.0005;/* the old= 0.001 */
+  DL_j=0.0;
+  SCA_j=0.0;
+  SCA=0.0;
+  j=0;
+  newz_Lc=1;
+  newz_Mc=1;
+
+  //Part-1.1: Current Points
+  Pc[0]=P[0];  Pc[1]=P[1];
+  Pc_zone=check_each_zone(c,Pc);
+  if(Pc_zone<0) /* outside catchment */
+    { printf("\nPA is outside catchment.");
+      printf("\nPlease, put the PA inside catchment\n");
+      exit(0); }
+  pp=calculate_inside_catchment(c,Pc,vectors,&vol_Pc,&newz_Lc);
+  G_Pc=sqrt(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+  GH0=G_Pc;
+  if(streamline!=(path *)NULL) { put_path_xy(streamline,j,Pc); }
+
+  //Part-1.2: Next Points
+  edit1_my_follow_stream(direction,Pc,vol_Pc.dV,vol_Pc.d2V,dP,r);
+  Pn[0]=Pc[0]+dP[0];  Pn[1]=Pc[1]+dP[1];
+  Pn_zone=check_each_zone(c,Pn);
+  if(Pn_zone<0) /* outside catchment */
+    { printf("\nNext step of PA is outside catchment.");
+      printf("\nPlease, put the PA inside catchment\n");
+      exit(0); }
+  pp=calculate_inside_catchment(c,Pn,vectors,&vol_Pn,&newz_Ln);
+  G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+
+  //Part-1.3: Sin_theta_Pc
+  abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+  dx= 1.0*dP[1]/abs_dP;  dy=-1.0*dP[0]/abs_dP;
+  dw=sqrt(dx*dx+dy*dy);  
+  cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+  cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+  if(cosq_theta>1.0) cosq_theta=1.0;
+  s_theta_Pc=sqrt(1.0-cosq_theta);
+  
+  //Part-1.4: SCA_j
+  DL_j=GH0*(1.0/G_Pc+1.0/G_Pn);
+  SCA_j=r/2.0*DL_j*s_theta_Pc;
+  SCA=SCA+SCA_j;  
+  j=j+1;
+
+  #if 1
+  printf(" %+5.3f %+5.3f %d",Pc[0],Pc[1],newz_Lc);
+  printf(" %+5.3f %+5.3f %d",Pn[0],Pn[1],newz_Ln);
+  printf(" %+5.3f %+5.3f %+5.3f ",GH0, G_Pc, G_Pn);
+  printf(" %+5.3f %+5.3f %+5.3f \n",DL_j,SCA_j,SCA);
+  #endif
+
+  while(j<max_steps && newz_Ln>=0) //Pn_zone = -1 if Pn is outside catchment
+    {
+      //Part-2.1: Current Points
+      Pc[0]=Pn[0];
+      Pc[1]=Pn[1];
+      if(streamline!=(path *)NULL) { put_path_xy(streamline,j,Pc); }
+      vol_Pc.dV[0]=vol_Pn.dV[0];
+      vol_Pc.dV[1]=vol_Pn.dV[1];
+      newz_Lc=newz_Ln;
+      G_Pc=sqrt(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+
+      //Part-2.2: Next Points
+      edit1_my_follow_stream(direction,Pc,vol_Pc.dV,vol_Pc.d2V,dP,r);
+      Pn[0]=Pc[0]+dP[0];
+      Pn[1]=Pc[1]+dP[1];
+
+      //Pn_zone=check_each_zone(c,Pn);
+      check_each_path(c,Pn,&d,&s,&segment,&this_path);
+      if(d<D) /* Pn is on the boundary */
+	{
+	  //Set the new Pn
+	  Pn[0]=Pn[0]+dP[0];
+	  Pn[1]=Pn[1]+dP[1];
+	  pp=calculate_inside_catchment(c,Pn,vectors,&vol_Pn,&newz_Ln);
+	  if(newz_Ln>=0) /* Pn is inside the catchment */
+	    {
+	      G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+	      
+	      //Part-2.3: Sin_theta_Pc
+	      abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+	      dx= 1.0*dP[1]/abs_dP;
+	      dy=-1.0*dP[0]/abs_dP;
+	      dw=sqrt(dx*dx+dy*dy);  
+	      cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+	      cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+	      if(cosq_theta>1.0) cosq_theta=1.0;
+	      s_theta_Pc=sqrt(1.0-cosq_theta);
+
+	      //Part-2.4: SCA_j
+	      if(newz_Lc==0 && newz_Ln==1)
+		{
+		  GH0=G_Pn;
+		  SCA_j=0.0;
+		  SCA=SCA+SCA_j;
+		}
+	      else
+		{
+		  DL_j=r/2.0*GH0*(1.0/G_Pc+1.0/G_Pn);
+		  SCA_j=DL_j*s_theta_Pc;
+		  SCA=SCA+SCA_j;  
+		}
+	      //printf(" On > Inside:\n");      
+	    }
+	  else
+	    {
+	      vol_Pn.dV[0]=0.0;  vol_Pn.dV[1]=0.0;
+	      G_Pn=0.0;
+	      s_theta_Pc=0.0;
+	      SCA_j=0.0;
+	      SCA=SCA+SCA_j;  
+	      //printf(" On > Outside:\n ");	      
+	    }
+	}
+      else /* Pn is not on the boundary */
+	{
+	  pp=calculate_inside_catchment(c,Pn,vectors,&vol_Pn,&newz_Ln);
+	  if(newz_Ln>=0) /* Pn is inside the catchment */
+	    {
+	      G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+
+	      //Part-2.3: Sin_theta_Pc
+	      abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+	      dx= 1.0*dP[1]/abs_dP;
+	      dy=-1.0*dP[0]/abs_dP;
+	      dw=sqrt(dx*dx+dy*dy);  
+	      cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+	      cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+	      if(cosq_theta>1.0) cosq_theta=1.0;
+	      s_theta_Pc=sqrt(1.0-cosq_theta);
+
+	      //Part-2.4: SCA_j
+	      if(newz_Lc==0 && newz_Ln==1)
+		{
+		  GH0=G_Pn;
+		  SCA_j=0.0;
+		  SCA=SCA+SCA_j;
+		}
+	      else
+		{
+		  DL_j=GH0*(1.0/G_Pc+1.0/G_Pn);
+		  SCA_j=r/2.0*DL_j*s_theta_Pc;
+		  SCA=SCA+SCA_j;  
+		}
+	      //printf(" Inside the catchment ");
+	    }
+	  else
+	    {
+	      vol_Pn.dV[0]=0.0;  vol_Pn.dV[1]=0.0;
+	      G_Pn=0.0;
+	      s_theta_Pc=0.0;
+	      SCA_j=0.0;
+	      SCA=SCA+SCA_j;  
+	      //printf(" Inside > Outside:\n");
+	    }
+	}
+      
+      #if 1
+      if(j%1==0 || Pc[1]>-30.0)
+	{
+	  printf(" %+5.3f %+5.3f %d",Pc[0],Pc[1],newz_Lc);
+	  printf(" %+5.3f %+5.3f %d",Pn[0],Pn[1],newz_Ln);
+	  printf(" %+5.3f %+5.3f %+5.3f ",GH0, G_Pc, G_Pn);
+	  printf(" %+5.3f %+5.3f %+5.3f \n",DL_j,SCA_j,SCA);
+	}
+      #endif    
+      //printf(" %+5.3f %+5.3f %+5.3f\n",Pc[1],G_Pc,1.0/G_Pc);
+
+      j=j+1;
+    }
+  
+  return(SCA);
+}
+/*--------------------------------------------------------*/
+double SCA_loop_GH0_v3(P,c,direction,max_steps,step_size,streamline,
+		    vectors,v1) 
+     coordinates P;
+     catchment *c;
+     int direction; /* 1 = go to max; 0 = go to min */
+     int max_steps; /* +ve = number of steps; -ve = don't check */
+     double step_size;
+     path *streamline;
+     bem_vectors *vectors;
+     bem_results *v1;
+{
+  double r, D, d, pp, s, abs_dP;
+  double DL_j, SCA_j, SCA;
+  int newz_Lc, newz_Ln, newz_Lc2, newz_Ln2;
+  int j, segment;
+
+  int Pc_zone, Pc2_zone, Pn_zone, Pn_zone2;
+  coordinates Pc, Pc2, Pn, Pn2, dP, dP2;
+  bem_results vol_Pc, vol_Pn, vol_Pc2, vol_Pn2;
+  double G_Pc, G_Pn, GH0;
+  double dx,dy,dw,cosq_theta, s_theta_Pc;
+
+  path *this_path;
+  
+  r=step_size;
+  D=0.001;/* the old= 0.001 */
+  DL_j=0.0;
+  SCA_j=0.0;
+  SCA=0.0;
+  j=0;
+  newz_Lc=1;
+
+  //Part-1.1: Current Points
+  Pc[0]=P[0];  Pc[1]=P[1];
+  Pc_zone=check_each_zone(c,Pc);
+  if(Pc_zone<0) /* outside catchment */
+    { printf("\nPA is outside catchment.");
+      printf("\nPlease, put the PA inside catchment\n");
+      exit(0); }
+  pp=calculate_inside_catchment(c,Pc,vectors,&vol_Pc,&newz_Lc);
+  G_Pc=sqrt(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+  GH0=G_Pc;
+  if(streamline!=(path *)NULL) { put_path_xy(streamline,j,Pc); }
+
+  //Part-1.2: Next Points
+  edit1_my_follow_stream(direction,Pc,vol_Pc.dV,vol_Pc.d2V,dP,r);
+  Pn[0]=Pc[0]+dP[0];  Pn[1]=Pc[1]+dP[1];
+  Pn_zone=check_each_zone(c,Pn);
+  if(Pn_zone<0) /* outside catchment */
+    { printf("\nNext step of PA is outside catchment.");
+      printf("\nPlease, put the PA inside catchment\n");
+      exit(0); }
+  pp=calculate_inside_catchment(c,Pn,vectors,&vol_Pn,&newz_Ln);
+  G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+
+  //Part-1.3: Sin_theta_Pc
+  abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+  dx= 1.0*dP[1]/abs_dP;  dy=-1.0*dP[0]/abs_dP;
+  dw=sqrt(dx*dx+dy*dy);  
+  cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+  cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+  if(cosq_theta>1.0) cosq_theta=1.0;
+  s_theta_Pc=sqrt(1.0-cosq_theta);
+
+  //Part-1.4: Current-2 Points
+  Pc2[0]=Pc[0]+dx;
+  Pc2[1]=Pc[1]+dy;
+  Pc2_zone=check_each_zone(c,Pc2);
+  if(Pc2_zone<0) /* outside catchment */
+    { printf("\nPA is outside catchment.");
+      printf("\nPlease, put the PA inside catchment\n");
+      exit(0); }
+  pp=calculate_inside_catchment(c,Pc2,vectors,&vol_Pc2,&newz_Lc2);
+  edit1_my_follow_stream(direction,Pc2,vol_Pc2.dV,vol_Pc2.d2V,dP2,r);
+  Pn2[0]=Pc2[0]+dP2[0];
+  Pn2[1]=Pc2[1]+dP2[1];
+  Pn_zone2=check_each_zone(c,Pn2);
+  if(Pn_zone2<0) /* outside catchment */
+    { printf("\nNext step of PA is outside catchment.");
+      printf("\nPlease, put the PA inside catchment\n");
+      exit(0); }
+  pp=calculate_inside_catchment(c,Pn2,vectors,&vol_Pn2,&newz_Ln2);
+  
+  //Part-1.5: SCA_j
+  DL_j=GH0*(1.0/G_Pc+1.0/G_Pn);
+  SCA_j=r/2.0*DL_j*s_theta_Pc;
+  SCA=SCA+SCA_j;  
+  j=j+1;
+
+  #if 1
+  printf(" %+5.3f %+5.3f %d",Pc[0],Pc[1],newz_Lc);
+  printf(" %+5.3f %+5.3f %d",Pn[0],Pn[1],newz_Ln);
+  printf(" %+5.3f %+5.3f %+5.3f ",GH0, G_Pc, G_Pn);
+  printf(" %+5.3f %+5.3f %+5.3f \n",DL_j,SCA_j,SCA);
+  #endif
+  //printf(" %+5.3f %+5.3f %+5.3f\n",Pc[1],G_Pc,1.0/G_Pc);
+
+  //while(j<3 && newz_Ln>=0) //Pn_zone = -1 if Pn is outside catchment
+  while(j<max_steps && newz_Ln>=0) //Pn_zone = -1 if Pn is outside catchment
+    {
+      //Part-2.1: Current Points
+      Pc[0]=Pn[0];
+      Pc[1]=Pn[1];
+      if(streamline!=(path *)NULL) { put_path_xy(streamline,j,Pc); }
+      vol_Pc.dV[0]=vol_Pn.dV[0];
+      vol_Pc.dV[1]=vol_Pn.dV[1];
+      newz_Lc=newz_Ln;
+      G_Pc=sqrt(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+
+      Pc2[0]=Pn2[0];
+      Pc2[1]=Pn2[1];
+      vol_Pc2.dV[0]=vol_Pn2.dV[0];
+      vol_Pc2.dV[1]=vol_Pn2.dV[1];
+      newz_Lc2=newz_Ln2;
+
+      //Part-2.2: Next Points
+      edit1_my_follow_stream(direction,Pc, vol_Pc.dV, vol_Pc.d2V, dP, r);
+      Pn[0]=Pc[0]+dP[0];
+      Pn[1]=Pc[1]+dP[1];
+
+      edit1_my_follow_stream(direction,Pc2,vol_Pc2.dV,vol_Pc2.d2V,dP2,r);
+      Pn2[0]=Pc2[0]+dP2[0];
+      Pn2[1]=Pc2[1]+dP2[1];
+      
+      //Pn_zone=check_each_zone(c,Pn);
+      check_each_path(c,Pn,&d,&s,&segment,&this_path);
+      if(d<D) /* Pn is on the boundary */
+	{
+	  //Set the new Pn
+	  Pn[0] =Pn[0] +dP[0];	  Pn[1] =Pn[1] +dP[1];
+	  Pn2[0]=Pn2[0]+dP2[0];	  Pn2[1]=Pn2[1]+dP2[1];
+	  
+	  pp=calculate_inside_catchment(c,Pn ,vectors,&vol_Pn ,&newz_Ln);
+	  pp=calculate_inside_catchment(c,Pn2,vectors,&vol_Pn2,&newz_Ln2);
+	  if(newz_Ln>=0) /* Pn is inside the catchment */
+	    {
+	      G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+	      
+	      //Part-2.3: Sin_theta_Pc
+	      abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+	      dx= 1.0*dP[1]/abs_dP;
+	      dy=-1.0*dP[0]/abs_dP;
+	      dw=sqrt(dx*dx+dy*dy);  
+	      cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+	      cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+	      if(cosq_theta>1.0) cosq_theta=1.0;
+	      s_theta_Pc=sqrt(1.0-cosq_theta);
+
+	      //Part-2.4: SCA_j
+	      if(newz_Lc==0 && newz_Ln==1)
+		{
+		  dx=Pc2[0]-Pc[0];
+		  dy=Pc2[1]-Pc[1];
+		  dw=sqrt(dx*dx+dy*dy);  		  
+		  GH0=dw*G_Pn;
+		  //GH0=G_Pn;
+		  SCA_j=0.0;
+		  SCA=SCA+SCA_j;
+		  printf(">>>>dw=%f<<",dw);
+		}
+	      else
+		{
+		  DL_j=GH0*(1.0/G_Pc+1.0/G_Pn);
+		  SCA_j=r/2.0*DL_j*s_theta_Pc;
+		  SCA=SCA+SCA_j;  
+		}
+	      //printf(" On > Inside:\n");      
+	    }
+	  else
+	    {
+	      vol_Pn.dV[0]=0.0;  vol_Pn.dV[1]=0.0;
+	      G_Pn=0.0;
+	      s_theta_Pc=0.0;
+	      SCA_j=0.0;
+	      SCA=SCA+SCA_j;  
+	      //printf(" On > Outside:\n ");	      
+	    }
+	}
+      else /* Pn is not on the boundary */
+	{
+	  pp=calculate_inside_catchment(c,Pn ,vectors,&vol_Pn ,&newz_Ln);
+	  pp=calculate_inside_catchment(c,Pn2,vectors,&vol_Pn2,&newz_Ln2);
+	  if(newz_Ln>=0) /* Pn is inside the catchment */
+	    {
+	      G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+
+	      //Part-2.3: Sin_theta_Pc
+	      abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+	      dx= 1.0*dP[1]/abs_dP;
+	      dy=-1.0*dP[0]/abs_dP;
+	      dw=sqrt(dx*dx+dy*dy);  
+	      cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+	      cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+	      if(cosq_theta>1.0) cosq_theta=1.0;
+	      s_theta_Pc=sqrt(1.0-cosq_theta);
+
+	      //Part-2.4: SCA_j
+	      if(newz_Lc==0 && newz_Ln==1)
+		{
+		  dx=Pc2[0]-Pc[0];
+		  dy=Pc2[1]-Pc[1];
+		  dw=sqrt(dx*dx+dy*dy);  		  
+		  GH0=dw*G_Pn;
+		  //GH0=G_Pn;
+		  SCA_j=0.0;
+		  SCA=SCA+SCA_j;
+		  printf(">>dw=%f<<",dw);
+		}
+	      else
+		{
+		  DL_j=GH0*(1.0/G_Pc+1.0/G_Pn);
+		  SCA_j=r/2.0*DL_j*s_theta_Pc;
+		  SCA=SCA+SCA_j;  
+		}
+	      //printf(" Inside the catchment ");
+	    }
+	  else
+	    {
+	      vol_Pn.dV[0]=0.0;  vol_Pn.dV[1]=0.0;
+	      G_Pn=0.0;
+	      s_theta_Pc=0.0;
+	      SCA_j=0.0;
+	      SCA=SCA+SCA_j;  
+	      //printf(" Inside > Outside:\n");
+	    }
+	}
+      
+      #if 1
+      if(j%1==0 || Pc[1]>-30.0)
+	{
+	  printf(" %+5.3f %+5.3f %d",Pc[0],Pc[1],newz_Lc);
+	  printf(" %+5.3f %+5.3f %d",Pn[0],Pn[1],newz_Ln);
+	  printf(" %+5.3f %+5.3f %+5.3f ",GH0, G_Pc, G_Pn);
+	  printf(" %+5.3f %+5.3f %+5.3f \n",DL_j,SCA_j,SCA);
+	}
+      #endif    
+      //printf(" %+5.3f %+5.3f %+5.3f\n",Pc[1],G_Pc,1.0/G_Pc);
+
+      j=j+1;
+    }
+  
+  return(SCA);
+}
+/*--------------------------------------------------------*/
+double SCA_loop_GH0_v4(P,c,direction,max_steps,step_size,streamline,
+		    vectors,v1) 
+     coordinates P;
+     catchment *c;
+     int direction; /* 1 = go to max; 0 = go to min */
+     int max_steps; /* +ve = number of steps; -ve = don't check */
+     double step_size;
+     path *streamline;
+     bem_vectors *vectors;
+     bem_results *v1;
+{
+  double r, D, d, pp, s, abs_dP;
+  double DL_j, SCA_j, SCA;
+  int newz_Lc, newz_Mc, newz_Ln, newz_Ln2;
+  int j, segment;
+
+  int Pc_zone, Pc2_zone, Pn_zone;
+  coordinates Pc, Pc2, Pn, dP;
+  bem_results vol_Pc,vol_Pn;
+  double G_Pc, G_Pn, GH0;
+  double dx,dy,dw,cosq_theta, s_theta_Pc;
+
+  path *this_path;
+  
+  r=step_size;
+  D=0.001;/* the old= 0.001 */
+  DL_j=0.0;
+  SCA_j=0.0;
+  SCA=0.0;
+  j=0;
+  newz_Lc=1;
+  newz_Mc=1;
+
+  //Part-1.1: Current Points
+  Pc[0]=P[0];  Pc[1]=P[1];
+  Pc_zone=check_each_zone(c,Pc);
+  if(Pc_zone<0) /* outside catchment */
+    { printf("\nPA is outside catchment.");
+      printf("\nPlease, put the PA inside catchment\n");
+      exit(0); }
+  pp=calculate_inside_catchment(c,Pc,vectors,&vol_Pc,&newz_Lc);
+  G_Pc=sqrt(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+  GH0=G_Pc;
+  if(streamline!=(path *)NULL) { put_path_xy(streamline,j,Pc); }
+
+  //Part-1.2: Next Points
+  edit1_my_follow_stream(direction,Pc,vol_Pc.dV,vol_Pc.d2V,dP,r);
+  Pn[0]=Pc[0]+dP[0];  Pn[1]=Pc[1]+dP[1];
+  Pn_zone=check_each_zone(c,Pn);
+  if(Pn_zone<0) /* outside catchment */
+    { printf("\nNext step of PA is outside catchment.");
+      printf("\nPlease, put the PA inside catchment\n");
+      exit(0); }
+  pp=calculate_inside_catchment(c,Pn,vectors,&vol_Pn,&newz_Ln);
+  G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+
+  //Part-1.3: Sin_theta_Pc
+  abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+  dx= 1.0*dP[1]/abs_dP;  dy=-1.0*dP[0]/abs_dP;
+  dw=sqrt(dx*dx+dy*dy);  
+  cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+  cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+  if(cosq_theta>1.0) cosq_theta=1.0;
+  s_theta_Pc=sqrt(1.0-cosq_theta);
+  
+  //Part-1.4: SCA_j
+  DL_j=GH0*(1.0/G_Pc+1.0/G_Pn);
+  SCA_j=r/2.0*DL_j*s_theta_Pc;
+  SCA=SCA+SCA_j;  
+  j=j+1;
+
+  #if 0
+  printf(" %+5.3f %+5.3f %d",Pc[0],Pc[1],newz_Lc);
+  printf(" %+5.3f %+5.3f %d",Pn[0],Pn[1],newz_Ln);
+  printf(" %+5.3f %+5.3f %+5.3f ",GH0, G_Pc, G_Pn);
+  printf(" %+5.3f %+5.3f %+5.3f \n",DL_j,SCA_j,SCA);
+  #endif
+
+  //max_steps=10;
+
+  while(j<max_steps && newz_Ln>=0) //Pn_zone = -1 if Pn is outside catchment
+    {
+      //Part-2.1: Current Points
+      Pc[0]=Pn[0];
+      Pc[1]=Pn[1];
+      if(streamline!=(path *)NULL) { put_path_xy(streamline,j,Pc); }
+      vol_Pc.dV[0]=vol_Pn.dV[0];
+      vol_Pc.dV[1]=vol_Pn.dV[1];
+      newz_Lc=newz_Ln;
+      G_Pc=sqrt(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+
+      //Part-2.2: Next Points
+      edit1_my_follow_stream(direction,Pc,vol_Pc.dV,vol_Pc.d2V,dP,r);
+      Pn[0]=Pc[0]+dP[0];
+      Pn[1]=Pc[1]+dP[1];
+
+      //Pn_zone=check_each_zone(c,Pn);
+      check_each_path(c,Pn,&d,&s,&segment,&this_path);
+      if(d<D) /* Pn is on the boundary */
+	{
+	  //Set the new Pn
+	  Pn[0]=Pn[0]+dP[0];
+	  Pn[1]=Pn[1]+dP[1];
+	  pp=calculate_inside_catchment(c,Pn,vectors,&vol_Pn,&newz_Ln);
+	  if(newz_Ln>=0) /* Pn is inside the catchment */
+	    {
+	      G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+	      
+	      //Part-2.3: Sin_theta_Pc
+	      abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+	      dx= 1.0*dP[1]/abs_dP;
+	      dy=-1.0*dP[0]/abs_dP;
+	      dw=sqrt(dx*dx+dy*dy);  
+	      cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+	      cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+	      if(cosq_theta>1.0) cosq_theta=1.0;
+	      s_theta_Pc=sqrt(1.0-cosq_theta);
+
+	      //Part-2.4: SCA_j
+	      if(newz_Lc==0 && newz_Ln==1)
+		{
+		  GH0=G_Pn;
+		  //SCA_j=0.0;
+		  SCA=SCA+SCA_j;
+		}
+	      else
+		{
+		  DL_j=r/2.0*GH0*(1.0/G_Pc+1.0/G_Pn);
+		  SCA_j=DL_j*s_theta_Pc;
+		  SCA=SCA+SCA_j;  
+		}
+	      //printf(" On > Inside:\n");      
+	    }
+	  else
+	    {
+	      vol_Pn.dV[0]=0.0;  vol_Pn.dV[1]=0.0;
+	      G_Pn=0.0;
+	      s_theta_Pc=0.0;
+	      SCA_j=0.0;
+	      SCA=SCA+SCA_j;  
+	      //printf(" On > Outside:\n ");	      
+	    }
+	}
+      else /* Pn is not on the boundary */
+	{
+	  pp=calculate_inside_catchment(c,Pn,vectors,&vol_Pn,&newz_Ln);
+	  if(newz_Ln>=0) /* Pn is inside the catchment */
+	    {
+	      G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+
+	      //Part-2.3: Sin_theta_Pc
+	      abs_dP=sqrt(dP[0]*dP[0]+dP[1]*dP[1]);
+	      dx= 1.0*dP[1]/abs_dP;
+	      dy=-1.0*dP[0]/abs_dP;
+	      dw=sqrt(dx*dx+dy*dy);  
+	      cosq_theta=(dx*vol_Pc.dV[0]+dy*vol_Pc.dV[1])/dw;  
+	      cosq_theta=cosq_theta*cosq_theta/(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);
+	      if(cosq_theta>1.0) cosq_theta=1.0;
+	      s_theta_Pc=sqrt(1.0-cosq_theta);
+
+	      //Part-2.4: SCA_j
+	      if(newz_Lc==0 && newz_Ln==1)
+		{
+		  GH0=G_Pn;
+		  //SCA_j=0.0;
+		  SCA=SCA+SCA_j;
+		}
+	      else
+		{
+		  DL_j=GH0*(1.0/G_Pc+1.0/G_Pn);
+		  SCA_j=r/2.0*DL_j*s_theta_Pc;
+		  SCA=SCA+SCA_j;  
+		}
+	      //printf(" Inside the catchment ");
+	    }
+	  else
+	    {
+	      vol_Pn.dV[0]=0.0;  vol_Pn.dV[1]=0.0;
+	      G_Pn=0.0;
+	      s_theta_Pc=0.0;
+	      SCA_j=0.0;
+	      SCA=SCA+SCA_j;  
+	      //printf(" Inside > Outside:\n");
+	    }
+	}
+      
+      #if 0
+      if(j%1==0 || Pc[1]>-30.0)
+	{
+	  printf(" %+5.3f %+5.3f %d",Pc[0],Pc[1],newz_Lc);
+	  printf(" %+5.3f %+5.3f %d %+5.3e",Pn[0],Pn[1],newz_Ln,d);
+	  printf(" %+5.3f %+5.3f %+5.3f ", G_Pc, G_Pn, GH0);
+	  printf(" %+5.3f %+5.3f %+5.3f \n",DL_j,SCA_j,SCA);
+	}
+      #endif    
+      //printf(" %+5.3f %+5.3f %+5.3f\n",Pc[1],G_Pc,1.0/G_Pc);
+
+      j=j+1;
+    }
+  
+  return(SCA);
+}
+/*--------------------------------------------------------*/
+double SCA_loop_GH0_v5(P,c,direction,max_steps,step_size,streamline,
+		    vectors,v1) 
+     coordinates P;
+     catchment *c;
+     int direction; /* 1 = go to max; 0 = go to min */
+     int max_steps; /* +ve = number of steps; -ve = don't check */
+     double step_size;
+     path *streamline;
+     bem_vectors *vectors;
+     bem_results *v1;
+{
+  double r, D, d, pp, s, abs_dP;
+  double DL_j, SCA_j, SCA;
+  int newz_Lc, newz_Mc, newz_Ln, newz_Ln2;
+  int j, segment;
+
+  int Pc_zone, Pc2_zone, Pn_zone;
+  coordinates Pc, Pc2, Pn, dP;
+  bem_results vol_Pc,vol_Pn;
+  double G_Pc, G_Pn, GH0;
+  double dx,dy,dw,cosq_theta, s_theta_Pc;
+
+  path *this_path;
+  
+  r=step_size;
+  D=0.0005;/* the old= 0.001 */
+  DL_j=0.0;
+  SCA_j=0.0;
+  SCA=0.0;
+  j=0;
+  newz_Lc=1;
+  newz_Mc=1;
+
+  //max_steps=100;
+  Pc[0]=P[0];
+  Pc[1]=P[1];
+  Pc_zone=check_each_zone(c,Pc);
+  pp=calculate_inside_catchment(c,Pc,vectors,&vol_Pc,&newz_Lc);
+  G_Pc=sqrt(vol_Pc.dV[0]*vol_Pc.dV[0]+vol_Pc.dV[1]*vol_Pc.dV[1]);  
+  GH0=G_Pc;
+  newz_Ln=newz_Lc;
+  while(j<max_steps && newz_Ln>=0)
+    {
+      edit1_my_follow_stream(direction,Pc,vol_Pc.dV,vol_Pc.d2V,dP,r);
+      Pn[0]=Pc[0]+dP[0];
+      Pn[1]=Pc[1]+dP[1];      
+      pp=calculate_inside_catchment(c,Pn,vectors,&vol_Pn,&newz_Ln);
+      G_Pn=sqrt(vol_Pn.dV[0]*vol_Pn.dV[0]+vol_Pn.dV[1]*vol_Pn.dV[1]);
+      check_each_path(c,Pn,&d,&s,&segment,&this_path);
+      if(newz_Ln==1){ GH0=G_Pn;	}
+      if(newz_Ln>=0){
+	DL_j=GH0*(1.0/G_Pc+1.0/G_Pn);
+	SCA_j=r/2.0*DL_j;
+	SCA=SCA+SCA_j;  	
+      }
+      Pc[0]=Pn[0];
+      Pc[1]=Pn[1];
+      G_Pc=G_Pn;
+      vol_Pc.dV[0]=vol_Pn.dV[0];
+      vol_Pc.dV[1]=vol_Pn.dV[1];
+      vol_Pc.d2V[0][0]=vol_Pn.d2V[0][0];
+      vol_Pc.d2V[0][1]=vol_Pn.d2V[0][1];
+      vol_Pc.d2V[1][0]=vol_Pn.d2V[1][0];
+      vol_Pc.d2V[1][1]=vol_Pn.d2V[1][1];      
+      if(streamline!=(path *)NULL) { put_path_xy(streamline,j,Pc); }
+      j=j+1;
+    }
+  if(streamline!=(path *)NULL) streamline->points=j;
+  return(SCA);
+}

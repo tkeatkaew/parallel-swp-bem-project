@@ -1,0 +1,142 @@
+# Makefile for BEM Surface Water Path Analysis with OpenBLAS
+# This version uses OpenBLAS for all optimized matrix operations
+
+# Compiler and flags
+CC = gcc
+CFLAGS = -O3 -march=native -mtune=native -fopenmp
+CFLAGS += -Wall -Wextra
+
+# OpenBLAS configuration
+# Adjust these paths if your OpenBLAS is installed elsewhere
+OPENBLAS_INCLUDE = -I/usr/include/openblas
+OPENBLAS_LIB = -lopenblas -lpthread -lm
+
+# LAPACK (for matrix inversion) - usually comes with OpenBLAS
+LAPACK_LIB = -llapacke -llapack
+
+# Additional math libraries
+MATH_LIBS = -lm
+
+# Combined library flags
+LDFLAGS = $(OPENBLAS_LIB) $(LAPACK_LIB) $(MATH_LIBS)
+
+# Include directories
+INCLUDES = $(OPENBLAS_INCLUDE)
+
+# Source files
+SRCS = catcharea.c \
+       matrix.c \
+       bsolve.c \
+       matrix_inv_optimized.c \
+       matrix_multiply_openblas.c \
+       performance_summary.c
+
+# Object files
+OBJS = $(SRCS:.c=.o)
+
+# Executable name
+TARGET = catcharea
+
+# Default target
+all: $(TARGET)
+
+# Build executable
+$(TARGET): $(OBJS)
+	@echo "Linking $(TARGET)..."
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
+	@echo "Build complete: $(TARGET)"
+	@echo ""
+	@echo "To run benchmarks:"
+	@echo "  ./benchmark_openblas.sh"
+	@echo ""
+
+# Compile source files
+%.o: %.c
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -f $(OBJS) $(TARGET)
+	rm -f *.o
+	rm -rf benchmark_results_*
+	rm -f performance_results.csv
+	@echo "Clean complete."
+
+# Clean and rebuild
+rebuild: clean all
+
+# Install dependencies (Ubuntu/Debian)
+install-deps:
+	@echo "Installing dependencies (requires sudo)..."
+	sudo apt-get update
+	sudo apt-get install -y build-essential
+	sudo apt-get install -y libopenblas-dev
+	sudo apt-get install -y liblapacke-dev
+	@echo "Dependencies installed."
+	@echo ""
+	@echo "Verify OpenBLAS installation:"
+	@echo "  dpkg -l | grep openblas"
+	@echo "  dpkg -l | grep lapack"
+
+# Check OpenBLAS configuration
+check-openblas:
+	@echo "Checking OpenBLAS configuration..."
+	@echo ""
+	@echo "1. Library files:"
+	@ls -lh /usr/lib/x86_64-linux-gnu/libopenblas* 2>/dev/null || echo "  OpenBLAS libraries not found in standard location"
+	@echo ""
+	@echo "2. Header files:"
+	@ls -lh /usr/include/openblas/cblas.h 2>/dev/null || \
+	 ls -lh /usr/include/cblas.h 2>/dev/null || echo "  cblas.h not found"
+	@echo ""
+	@echo "3. OpenBLAS info:"
+	@pkg-config --modversion openblas 2>/dev/null || echo "  pkg-config info not available"
+	@echo ""
+	@echo "4. Environment:"
+	@echo "  OPENBLAS_NUM_THREADS = $${OPENBLAS_NUM_THREADS:-not set}"
+	@echo "  OMP_NUM_THREADS = $${OMP_NUM_THREADS:-not set}"
+
+# Run basic test
+test: $(TARGET)
+	@echo "Running basic test..."
+	export OMP_NUM_THREADS=6 OPENBLAS_NUM_THREADS=6 && \
+	./$(TARGET) 1.0 100.0 0.001 0 3 32
+
+# Run full benchmark
+benchmark: $(TARGET)
+	@echo "Running full benchmark suite..."
+	./benchmark_openblas.sh
+
+# Display build information
+info:
+	@echo "Build Configuration:"
+	@echo "  CC:       $(CC)"
+	@echo "  CFLAGS:   $(CFLAGS)"
+	@echo "  INCLUDES: $(INCLUDES)"
+	@echo "  LDFLAGS:  $(LDFLAGS)"
+	@echo ""
+	@echo "Source files:"
+	@echo "  $(SRCS)"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  all           - Build executable (default)"
+	@echo "  clean         - Remove build artifacts"
+	@echo "  rebuild       - Clean and build"
+	@echo "  install-deps  - Install OpenBLAS dependencies"
+	@echo "  check-openblas - Check OpenBLAS installation"
+	@echo "  test          - Run basic test"
+	@echo "  benchmark     - Run full benchmark suite"
+	@echo "  info          - Display this information"
+
+# Phony targets
+.PHONY: all clean rebuild install-deps check-openblas test benchmark info
+
+# Dependencies (header files)
+catcharea.o: matrix_types.h matrix.h
+matrix.o: matrix_types.h matrix.h matrix_inv.h performance_summary.h
+bsolve.o: matrix_types.h
+matrix_inv_optimized.o: matrix_types.h
+matrix_multiply_openblas.o: matrix_types.h matrix_multiply_optimized.h
+performance_summary.o: performance_summary.h

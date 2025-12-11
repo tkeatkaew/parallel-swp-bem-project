@@ -1,0 +1,119 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
+/*--------------------------------------------------------*/
+#include "boundary_types.h"
+#include "co_matrix_types.h"
+#include "matrix_types.h"
+#include "ten_matrix_types.h"
+#include "memory_types.h"
+
+#include "area.h"
+#include "catchment.h"
+#include "file.h"
+#include "memory.h"
+#include "path.h"
+#include "scan.h"
+#include "streamline.h"
+#include "trapfloat.h"
+
+#include "catcharea.h"
+/*--------------------------------------------------------*/
+/*--------------------------------------------------------*/
+/*--------------------------------------------------------*/
+int main(int argc, char *argv[])
+{
+  char title[64];
+  char data[]="catchment.txt"; /* step-01 */
+
+  bem_vectors *vectors;
+  catchment *c;
+  char *buffer;
+  double step_size,SCA,C_area;
+  int buf_size,i,max_points,num_zones,max_steps,max_streams;
+  matrix bvv, bcv;
+  path **streamlines;
+  section mouth;
+  coordinates PA,PB;
+
+  trap_floating_errors();
+  buf_size=512*12+1;
+  buffer=(char *)malloc(buf_size*sizeof(char));
+
+  num_zones=catchment_zones(data);
+  c=create_catchment(num_zones,30);
+  get_catchment(data,c);
+  plot_catchment(c,"catchment.out");
+  max_points=max_points_in_any_zone(c);
+  vectors=create_bem_vectors(&bvv,&bcv,max_points);
+
+  max_steps=10000;
+  step_size=1.0;
+
+  double rm, dr, seta;
+  rm=99.0;
+  dr=0.001;
+
+  step_size=atof(argv[1]);
+  rm=atof(argv[2]);
+  dr=atof(argv[3]);
+
+
+  //mouth-01
+  put_section("P(0) = (582012.2,943774.6) P(10) = (581857.6,943696.3)",&mouth);
+  show_section(&mouth);
+  max_streams=mouth.n;
+  streamlines=(path **)malloc(max_streams*sizeof(path *));
+  for(i=0;i<max_streams;i++){
+    streamlines[i]=create_path(max_steps,1,0);} 
+  C_area=catchment_area(c,&mouth,0,max_steps,step_size,max_streams,
+	      streamlines,vectors); //stream down   
+  plot_streamlines(c,max_streams,streamlines,"inlet-01.out");
+  printf("%f\t%f\t%f\n",PA[0],PA[1],SCA);
+
+  //mouth-02
+  put_section("P(0) = (581857.6,943696.3) P(10) = (581669.1,943689.8)",&mouth);
+  show_section(&mouth);
+  max_streams=mouth.n;
+  streamlines=(path **)malloc(max_streams*sizeof(path *));
+  for(i=0;i<max_streams;i++){
+    streamlines[i]=create_path(max_steps,1,0);} 
+  C_area=catchment_area(c,&mouth,0,max_steps,step_size,max_streams,
+	      streamlines,vectors); //stream down   
+  plot_streamlines(c,max_streams,streamlines,"inlet-02.out");
+  printf("%f\t%f\t%f\n",PA[0],PA[1],SCA);
+
+   //mouth-03
+  put_section("P(0) = (581669.1,943689.8) P(10) = (581470.7,943694.7)",&mouth);
+  show_section(&mouth);
+  max_streams=mouth.n;
+  streamlines=(path **)malloc(max_streams*sizeof(path *));
+  for(i=0;i<max_streams;i++){
+    streamlines[i]=create_path(max_steps,1,0);} 
+  C_area=catchment_area(c,&mouth,0,max_steps,step_size,max_streams,
+	      streamlines,vectors); //stream down   
+  plot_streamlines(c,max_streams,streamlines,"inlet-03.out");
+  printf("%f\t%f\t%f\n",PA[0],PA[1],SCA);
+
+   //mouth-04
+  //put_section("P(0) = (581802.0,943695.0) P(10) = (581548.0,943695.0)",&mouth);
+  show_section(&mouth);
+  max_streams=mouth.n;
+  streamlines=(path **)malloc(max_streams*sizeof(path *));
+  for(i=0;i<max_streams;i++){
+    streamlines[i]=create_path(max_steps,1,0);} 
+  C_area=catchment_area(c,&mouth,0,max_steps,step_size,max_streams,
+	      streamlines,vectors); //stream down   
+  plot_streamlines(c,max_streams,streamlines,"inlet-04.out");
+  printf("%f\t%f\t%f\n",PA[0],PA[1],SCA);
+
+  
+  for(i=0;i<max_streams;i++){
+    streamlines[i]=destroy_path(streamlines[i]);}
+  
+  destroy_catchment(c);
+  destroy_bem_vectors(vectors);
+  free((void *)buffer);
+  return(0);
+}
+/*--------------------------------------------------------*/

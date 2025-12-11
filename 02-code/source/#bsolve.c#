@@ -1,0 +1,346 @@
+/*--------------------------------- bsolve.c ---------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/* routines for solving boundary value problem                                      */
+/*----------------------------------------------------------------------------------*/
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
+/*----------------------------------------------------------------------------------*/
+#include "boundary_types.h"
+#include "co_matrix_types.h"
+#include "matrix_types.h"
+#include "ten_matrix_types.h"
+
+#include "co_matrix.h"
+#include "linear_sys.h"
+#include "matrix.h"
+#include "path.h"
+#include "ten_matrix.h"
+
+#include "bsolve.h"
+/*----------------------------------------------------------------------------------*/
+/*  make boundary voltage vector */
+/*----------------------------------------------------------------------------------*/
+void make_boundary_voltage_vector(b,bvv)
+     boundary *b;
+     matrix *bvv;
+{
+  int i,paths;
+  path *path_i;
+  double *result;
+  int poi;
+
+  if(b->bvv==(double *)NULL)
+    {
+      bvv->value=(double *)malloc(get_num_rows(bvv)*sizeof(double));
+      b->bvv=bvv->value;
+      paths = b->components;
+      result = bvv->value;
+            for(i=0;i<paths;i++)
+	{ 
+	  path_i=b->loop[i];      
+	  fill_boundary_voltage_vector(path_i, result);
+	  poi=path_i->points;
+	  result=result+(2*poi);
+	}
+    }
+  else
+    {
+      bvv->value=b->bvv; /* use array calculated last time */
+    }
+}
+
+/*----------------------------------------------------------------------------------*/
+/*  fill boundary voltage in vector */
+/*----------------------------------------------------------------------------------*/
+void fill_boundary_voltage_vector(path_i, result)
+
+  path *path_i;
+  double *result;
+{
+  double v1,v2;
+  double V, W;
+  int j,poi;
+  
+  poi=path_i->points;
+  for(j=0;j<poi;j++)
+    {
+      v1=get_path_value(path_i,j);
+      v2=get_path_value(path_i,j+1);
+      V=v2-v1;
+      W=(v2+v1)/2.0;
+      p2c_2coeff(V,W,&V,&W);
+      result[2*j]=V;
+      result[2*j+1]=W;
+    } 
+}
+
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*  make boundary current vector (final ?? version) */
+/*----------------------------------------------------------------------------------*/
+void make_boundary_current_vector(b,V,J)
+     matrix *V; /* bvv boundary voltage vector */
+     matrix *J; /* bcv boundary current vector */
+     boundary *b;
+{
+  int j,finite;
+
+  finite=0;
+  for(j=0;j<b->components;j++)
+    {
+      if(b->level[j]==0) finite=1; /* the zone is finite; it does not go to infinity */
+    }
+  if(finite==1)
+    {
+      make_bcv_use_KCL(b,V,J); /* enforce KCL explicitly */
+    }
+  else
+    {
+      make_bcv_no_KCL(b,V,J); /* do not enforce KCL */
+    }
+}
+
+/*----------------------------------------------------------------------------------*/
+/*  make boundary current vector (third version) */
+/*----------------------------------------------------------------------------------*/
+void make_bcv_no_KCL(b,V,J)
+     matrix *V; /* bvv boundary voltage vector */
+     matrix *J; /* bcv boundary current vector */
+     boundary *b;
+{
+  matrix A, B, D, DA, DAV;
+  matrix BT, BTB, BTDAV;
+  double *values;
+  int N,j;
+
+  if(b->bcv==(double *)NULL)
+    {
+      J->value=(double *)malloc(get_num_rows(J)*sizeof(double));
+      b->bcv=J->value;
+      N=0;
+      for(j=0;j<b->components;j++)
+	{
+	  N=N+b->loop[j]->points;
+	}
+      values=(double *)malloc(9*N*(4*N+1)*sizeof(double));
+
+      /*-----------------------------*/
+      attach_matrix(&A,5*N,2*N,values);
+      attach_matrix(&D,5*N,2*N,after_matrix(&A)); 
+      attach_matrix(&DA,5*N,2*N,values);            /* write on top of A */
+      attach_matrix(&DAV,5*N,1,after_matrix(&D)); 
+      
+      printf("\nmake voltage matrix A and D\n");
+      make_voltage_geometry_matrix(b,&A);
+      make_diagonal_matrix(b,&D);  
+      add_matrix(&D,&A,&DA); 
+      multiply_matrix(&DA,V,&DAV);
+
+      /*-----------------------------*/
+      attach_matrix(&B,5*N,4*N,values);            /* write on top of A,D,DA */  
+      attach_matrix(&BT,5*N,4*N,values);           /* share data of B */
+      attach_matrix(&BTB,4*N,4*N,after_matrix(&DAV));
+      attach_matrix(&BTDAV,4*N,1,after_matrix(&BTB));
+
+      printf("make current matrix B\n");
+      make_current_geometry_matrix(b,&B);
+      transpose_matrix(&BT,&BT);                   /* makes transpose but does not destroy B */
+      
+      multiply_matrix(&BT,&B,&BTB);
+      invert_matrix(&BTB,&BTB);
+      multiply_matrix(&BT,&DAV,&BTDAV);
+      multiply_matrix(&BTB,&BTDAV,J);
+      free((void *)values);
+    }
+  else
+    {
+      J->value=b->bcv; /* use array calculated last time */
+    }
+}
+
+/*----------------------------------------------------------------------------------*/
+/*  make boundary current vector (fourth version: imposes KCL) */
+/*----------------------------------------------------------------------------------*/
+void make_bcv_use_KCL(b,V,J)
+     matrix *V; /* bvv boundary voltage vector */
+     matrix *J; /* bcv boundary current vector */
+     boundary *b;
+{
+  matrix A, B, D, DA, DAV;
+  matrix BT, BTB, BTDAV, KCL;
+  double *values;
+  int N,j;
+
+  if(b->bcv==(double *)NULL)
+    {
+      J->value=(double *)malloc(get_num_rows(J)*sizeof(double));
+      b->bcv=J->value;
+      N=0;
+      for(j=0;j<b->components;j++)
+	{
+	  N=N+b->loop[j]->points;
+	}
+      values=(double *)malloc((9*N+1)*(4*N+1)*sizeof(double));
+      
+      /*-----------------------------*/
+      attach_matrix(&A,5*N+1,2*N,values);
+      attach_matrix(&D,5*N+1,2*N,after_matrix(&A)); 
+      attach_matrix(&DA,5*N+1,2*N,values);            /* write on top of A */
+      attach_matrix(&DAV,5*N+1,1,after_matrix(&D)); 
+      
+      make_voltage_geometry_matrix(b,&A);
+      zero_last_matrix_row(&A);
+      make_diagonal_matrix(b,&D);  
+      zero_last_matrix_row(&D);
+      add_matrix(&D,&A,&DA); 
+      multiply_matrix(&DA,V,&DAV);
+      
+      /*-----------------------------*/
+      attach_matrix(&B,5*N+1,4*N,values);            /* write on top of A,D,DA */  
+      attach_matrix(&BT,5*N+1,4*N,values);           /* share data of B */
+      attach_matrix(&BTB,4*N,4*N,after_matrix(&DAV));
+      attach_matrix(&BTDAV,4*N,1,after_matrix(&BTB));
+      attach_matrix(&KCL,1,4*N,after_matrix(&BTB));
+      
+      make_current_geometry_matrix(b,&B);
+      make_kcl_geometry_vector(b,&KCL);
+      fill_last_matrix_row(&B,&KCL);
+      transpose_matrix(&BT,&BT);                   /* makes transpose but does not destroy B */
+      
+      multiply_matrix(&BT,&B,&BTB);
+      invert_matrix(&BTB,&BTB);
+      multiply_matrix(&BT,&DAV,&BTDAV);
+      multiply_matrix(&BTB,&BTDAV,J);
+      free((void *)values);
+    }
+  else
+    {
+      J->value=b->bcv; /* use array calculated last time */
+    }
+}
+
+/*----------------------------------------------------------------------------------*/
+/*  make boundary vector : bvv , bcv */
+/*----------------------------------------------------------------------------------*/
+void make_boundary_vector(b,bvv,bcv)
+     boundary *b;
+     matrix *bvv, *bcv;
+{
+  make_boundary_voltage_vector(b,bvv); 
+  make_boundary_current_vector(b,bvv,bcv);
+}
+  
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*  make boundary internal voltage at point P */
+/*----------------------------------------------------------------------------------*/
+double make_internal_voltage(b,bvv,bcv,P,vgv,cgv)
+     boundary *b;
+     matrix *bvv, *bcv, *vgv, *cgv;
+     coordinates P;
+{
+  matrix temp1;
+  double voltage,v1,v2;
+
+  temp1.transpose=0;
+  temp1.invert=0;   
+  temp1.rows=1;      
+  temp1.columns=1;   
+  temp1.value=&voltage;
+
+  make_voltage_geometry_vector(P,b,vgv);
+  make_current_geometry_vector(P,b,cgv);
+
+  multiply_matrix(vgv,bvv,&temp1);
+  v1=voltage;
+  multiply_matrix(cgv,bcv,&temp1);
+  v2=voltage;
+  voltage= v2-v1;
+
+  return(voltage);
+}
+/*----------------------------------------------------------------------------------*/
+/*  make boundary internal grad_voltage at point P */
+/*----------------------------------------------------------------------------------*/
+void make_internal_grad_voltage(b,bvv,bcv,P,co_vgv,co_cgv,Gv)
+     boundary *b;
+     matrix *bvv, *bcv;
+     co_matrix *co_vgv, *co_cgv;
+     coordinates P,Gv;
+{
+  co_matrix temp1;
+  coordinates voltage, v1 ,v2;
+
+  temp1.transpose=0;
+  temp1.invert=0;   
+  temp1.rows=1;      
+  temp1.columns=1;   
+  temp1.value=&voltage;
+
+  /*-------------------------------------*/
+  /*------- trying myself ---------------*/   
+  make_co_voltage_geometry_vector(P,b,co_vgv);
+  make_co_current_geometry_vector(P,b,co_cgv);
+  /*-------------------------------------*/
+
+  multiply_co_matrix(co_vgv,bvv,&temp1);
+  v1[0]=voltage[0];  v1[1]=voltage[1];
+
+  multiply_co_matrix(co_cgv,bcv,&temp1);
+  v2[0]=voltage[0];  v2[1]=voltage[1];
+
+  Gv[0]=v2[0]-v1[0]; Gv[1]=v2[1]-v1[1];  
+
+  Gv[0]=Gv[0]/(2.0*M_PI);
+  Gv[1]=Gv[1]/(2.0*M_PI);
+}
+
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*  make boundary internal sec_grad_voltage at point P */
+/*----------------------------------------------------------------------------------*/
+void make_internal_sec_grad_voltage(b,bvv,bcv,P,ten_vgv,ten_cgv,Gv)
+     boundary *b;
+     matrix *bvv, *bcv;
+     ten_matrix *ten_vgv, *ten_cgv;
+     coordinates P;
+     tensor Gv;
+{
+  ten_matrix temp1;
+  tensor voltage, v1 ,v2;
+
+  temp1.transpose=0;
+  temp1.invert=0;   
+  temp1.rows=1;      
+  temp1.columns=1;   
+  temp1.value=&voltage;
+
+  /*-------------------------------------*/
+  /*------- trying myself ---------------*/   
+  make_ten_voltage_geometry_vector(P,b,ten_vgv);
+  make_ten_current_geometry_vector(P,b,ten_cgv);
+  /*-------------------------------------*/
+
+  multiply_ten_matrix(ten_vgv,bvv,&temp1);
+  v1[0][0]=voltage[0][0];  v1[0][1]=voltage[0][1];
+  v1[1][0]=voltage[1][0];  v1[1][1]=voltage[1][1];
+
+  multiply_ten_matrix(ten_cgv,bcv,&temp1);
+  v2[0][0]=voltage[0][0];  v2[0][1]=voltage[0][1];
+  v2[1][0]=voltage[1][0];  v2[1][1]=voltage[1][1];
+
+  Gv[0][0]=v2[0][0]-v1[0][0];
+  Gv[0][1]=v2[0][1]-v1[0][1];
+  Gv[1][0]=v2[1][0]-v1[1][0];
+  Gv[1][1]=v2[1][1]-v1[1][1];
+
+  Gv[0][0]=Gv[0][0]/(2.0*M_PI);
+  Gv[0][1]=Gv[0][1]/(2.0*M_PI);
+  Gv[1][0]=Gv[1][0]/(2.0*M_PI);
+  Gv[1][1]=Gv[1][1]/(2.0*M_PI);
+}
+
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/

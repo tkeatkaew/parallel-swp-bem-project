@@ -1,0 +1,20 @@
+/* ../source/catchment.c */
+int catchment_zones(unsigned char *file);
+catchment *create_catchment(int zones, int paths);
+catchment *destroy_catchment(catchment *c);
+int max_points_in_any_zone(catchment *c);
+void get_catchment(unsigned char *file, catchment *c);
+void plot_catchment(catchment *c, unsigned char *file);
+int check_each_zone(catchment *c, coordinates P);
+int check_zone(boundary *b, coordinates P);
+void reverse_zone(boundary *b);
+void reverse_all_paths(boundary *b);
+int distance_to_path(coordinates P, path *this_path, double *d, double *s, int *segment);
+void mark_paths(boundary *b);
+void mark_curve(boundary *b);
+int find_orientation(path *this_path);
+void find_limits(path *this_path, coordinates min, coordinates max);
+int count_paths(boundary *b, int *outside_zone, int *inside_zone);
+void show_curve(boundary **zones, int i);
+void show_paths(boundary **zones, int i);
+void check_each_path(catchment *c, coordinates P, double *d, double *s, int *segment, path **this_path);

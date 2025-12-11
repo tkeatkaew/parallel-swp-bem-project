@@ -1,0 +1,191 @@
+#------------------------------------------------------------
+#G=-g -Wall
+G=-g
+#G=
+VPATH=../header:../source:../object
+
+#------------------------------------------------------------
+# make all executable files
+#------------------------------------------------------------
+all: header object catcharea
+
+#------------------------------------------------------------
+# make executable files
+#------------------------------------------------------------
+catcharea1: catcharea.o trapfloat.o catchment.o file.o path_list.o \
+	path.o boundary.o geometry.o memory.o matrix.o \
+	co_matrix.o ten_matrix.o scan.o vcalc.o bsolve.o \
+	linear_sys.o terms.o streamline.o area.o
+	cc -lm -o catcharea $^
+
+catcharea: catcharea.o trapfloat.o catchment.o file.o matrix_inv.o path_list.o \
+	path.o boundary.o geometry.o memory.o matrix.o \
+	co_matrix.o ten_matrix.o scan.o vcalc.o bsolve.o \
+	linear_sys.o terms.o streamline.o area.o
+	cc -no-pie -o catcharea $^ -lm -I/opt/OpenBLAS/include/ -L/opt/OpenBLAS/lib -lopenblas -lpthread -fopenmp -march=native -O3
+
+
+#------------------------------------------------------------
+# make object files
+#------------------------------------------------------------
+object: file.o matrix_inv.o path.o path_list.o geometry.o boundary.o \
+	catchment.o matrix.o co_matrix.o ten_matrix.o \
+	terms.o linear_sys.o bsolve.o scan.o \
+	vcalc.o streamline.o memory.o area.o trapfloat.o \
+	catcharea.o
+#------------------------------------------------------------
+file.o: file.c file.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+matrix_inv.o: matrix_inv.c matrix_inv.h
+	cc -I ../header -o ../object/matrix_inv.o -c -g ../source/matrix_inv.c -I/opt/OpenBLAS/include/ -L/opt/OpenBLAS/lib -lopenblas -lpthread -lgfortran -fopenmp -march=native -O3
+
+path.o: path.c path.h boundary_types.h file.h 
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+path_list.o: path_list.c path_list.h boundary_types.h path.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+geometry.o: geometry.c geometry.h boundary_types.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+boundary.o: boundary.c boundary.h boundary_types.h file.h path.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+catchment.o: catchment.c catchment.h boundary_types.h\
+	boundary.h file.h geometry.h path.h path_list.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+matrix.o: matrix.c matrix.h matrix_types.h file.h 
+	cc -no-pie -fopenmp -I ../header -o ../object/$@ -c $G $< 
+
+co_matrix.o: co_matrix.c co_matrix.h boundary_types.h\
+	matrix_types.h co_matrix_types.h matrix.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+ten_matrix.o: ten_matrix.c ten_matrix.h boundary_types.h\
+	matrix_types.h ten_matrix_types.h matrix.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+terms.o: terms.c terms.h boundary_types.h geometry.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+linear_sys.o: linear_sys.c linear_sys.h boundary_types.h\
+	co_matrix_types.h matrix_types.h ten_matrix_types.h \
+	co_matrix.h geometry.h matrix.h path.h \
+	ten_matrix.h terms.h 
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+bsolve.o: bsolve.c bsolve.h boundary_types.h\
+	co_matrix_types.h matrix_types.h ten_matrix_types.h \
+	co_matrix.h linear_sys.h matrix.h path.h ten_matrix.h 
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+scan.o: scan.c scan.h boundary_types.h co_matrix_types.h\
+	matrix_types.h ten_matrix_types.h memory_types.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+vcalc.o: vcalc.c vcalc.h boundary_types.h co_matrix_types.h \
+	matrix_types.h ten_matrix_types.h memory_types.h \
+	bsolve.h catchment.h co_matrix.h matrix.h path.h \
+	ten_matrix.h 
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+streamline.o: streamline.c streamline.h \
+	boundary_types.h co_matrix_types.h matrix_types.h \
+	ten_matrix_types.h memory_types.h \
+	catchment.h file.h path.h vcalc.h 
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+memory.o: memory.c memory.h 
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+area.o: area.c area.h \
+	boundary_types.h matrix_types.h co_matrix_types.h \
+	ten_matrix_types.h memory_types.h \
+	scan.h streamline.h 
+	cc -no-pie -I ../header -o ../object/$@ -c $G $< 
+
+trapfloat.o: trapfloat.c trapfloat.h
+	cc -no-pie -I ../header -o ../object/$@ -c $G $<
+
+catcharea.o: catcharea.c catcharea.h \
+	boundary_types.h co_matrix_types.h matrix_types.h \
+	ten_matrix_types.h memory_types.h \
+	area.h catchment.h file.h memory.h path.h \
+	scan.h streamline.h trapfloat.h 
+	cc -no-pie -I ../header -I ../steady -c $G $<
+
+#------------------------------------------------------------
+# make header files
+#------------------------------------------------------------
+header: file.h path.h path_list.h geometry.h\
+	boundary.h catchment.h\
+	matrix.h co_matrix.h ten_matrix.h\
+	terms.h linear_sys.h bsolve.h\
+	scan.h vcalc.h streamline.h memory.h area.h trapfloat.h
+
+#------------------------------------------------------------
+area.h: area.c
+	cproto -I ../header $^ > ../header/$@
+
+boundary.h: boundary.c
+	cproto -I ../header $^ > ../header/$@
+
+bsolve.h: bsolve.c
+	cproto -I ../header $^ > ../header/$@
+
+catchment.h: catchment.c
+	cproto -I ../header $^ > ../header/$@
+
+file.h: file.c
+	cproto -I ../header $^ > ../header/$@
+
+geometry.h: geometry.c
+	cproto -I ../header $^ > ../header/$@
+
+linear_sys.h: linear_sys.c
+	cproto -I ../header $^ > ../header/$@
+
+memory.h: memory.c
+	cproto -I ../header $^ > ../header/$@
+
+path.h: path.c
+	cproto -I ../header $^ > ../header/$@
+
+matrix_inv.h: matrix_inv.c
+	cproto -I ../header $^ > ../header/$@
+
+path_list.h: path_list.c
+	cproto -I ../header $^ > ../header/$@
+
+scan.h: scan.c
+	cproto -I ../header $^ > ../header/$@
+
+streamline.h: streamline.c
+	cproto -I ../header $^ > ../header/$@
+
+terms.h: terms.c
+	cproto -I ../header $^ > ../header/$@
+
+matrix.h: matrix.c
+	cproto -I ../header $^ > ../header/$@
+
+co_matrix.h: co_matrix.c
+	cproto -I ../header $^ > ../header/$@
+
+ten_matrix.h: ten_matrix.c
+	cproto -I ../header $^ > ../header/$@
+
+vcalc.h: vcalc.c
+	cproto -I ../header $^ > ../header/$@
+
+trapfloat.h: trapfloat.c
+	cproto -I ../header $^ > ../header/$@
+
+#------------------------------------------------------------
+catcharea.h: catcharea.c
+	cproto -I ../header -I ../steady $^ > $@
+
+#------------------------------------------------------------
+#------------------------------------------------------------
